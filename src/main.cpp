@@ -13,6 +13,8 @@
 //
 
 #include <Arduino.h>
+// #include <ESP32Servo.h>
+#include <Adafruit_PWMServoDriver.h>
 #include <WiFi.h>
 #include <zenoh-pico.h>
 
@@ -35,6 +37,134 @@
 z_owned_session_t s;
 z_owned_subscriber_t sub;
 
+
+const float SERVO_FREQ = 50.0;  // Analog servos run at ~50 Hz updates
+const uint32_t OSCILLATOR = 25000000;  // 25 MHz
+
+// MG90 servo pulse width and sweep parameters
+const int MG90_MIN_ANGLE = 0;
+const int MG90_MAX_ANGLE = 180;
+const int MG90_MIN_PULSE_US = 500;
+const int MG90_MAX_PULSE_US = 2500;
+const int MG90_STEP = 2;
+const int MG90_DELAY_MS = 15;
+
+const uint8_t UP_MAX = 90+50;
+const uint8_t DOWN_MAX = 90-50;
+const uint8_t LEFT_MAX = 90+50;
+const uint8_t RIGHT_MAX = 90-50;
+const uint8_t BOT_OPEN = 45;
+const uint8_t BOT_CLOSED = 30;
+const uint8_t TOP_OPEN = 35;
+const uint8_t TOP_CLOSED = 35;
+
+
+// PCA9685 PWM resolution and timing
+const uint16_t PCA9685_STEPS = 4096;           // 12-bit resolution
+const float PCA9685_PWM_PERIOD_US = 20000.0;   // 20ms period for 50Hz
+const float PCA9685_STEP_US = PCA9685_PWM_PERIOD_US / PCA9685_STEPS; // ≈4.88us per step
+
+Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver(0x40);
+const uint look_ud = 0;
+const uint look_lr = 1;
+const uint lid_bl = 2;
+const uint lid_tl = 3;
+const uint lid_br = 4;
+const uint lid_tr = 5;
+
+// Helper function to convert angle (0-180) to PWM pulse length for MG90 servos
+// Converts angle to microseconds, then to PCA9685 steps
+uint16_t angleToPulse(
+    int angle,
+    int minAngle = MG90_MIN_ANGLE,
+    int maxAngle = MG90_MAX_ANGLE,
+    int minPulse = MG90_MIN_PULSE_US,
+    int maxPulse = MG90_MAX_PULSE_US
+) {
+    int us = map(angle, minAngle, maxAngle, minPulse, maxPulse);
+    // Divide by PCA9685_STEP_US to get the number of steps for the PWM driver
+    return us / PCA9685_STEP_US;
+}
+
+void blink() {
+    pwm.setPWM(lid_bl, 0, angleToPulse(90+BOT_CLOSED));
+    pwm.setPWM(lid_br, 0, angleToPulse(90-BOT_CLOSED));
+    pwm.setPWM(lid_tl, 0, angleToPulse(90-TOP_CLOSED));
+    pwm.setPWM(lid_tr, 0, angleToPulse(90+TOP_CLOSED));
+    delay(100);
+    pwm.setPWM(lid_bl, 0, angleToPulse(90-BOT_OPEN));
+    pwm.setPWM(lid_br, 0, angleToPulse(90+BOT_OPEN));
+    pwm.setPWM(lid_tl, 0, angleToPulse(90+TOP_OPEN));
+    pwm.setPWM(lid_tr, 0, angleToPulse(90-TOP_OPEN));
+}
+
+void setup() {
+    pwm.begin();
+    pwm.setPWMFreq(SERVO_FREQ);
+    pwm.setOscillatorFrequency(OSCILLATOR);
+    delay(10);
+
+    // Set all servos to 90 degrees
+    uint16_t pulse90 = angleToPulse(90);
+    pwm.setPWM(look_ud, 0, pulse90);
+    pwm.setPWM(look_lr, 0, pulse90);
+    pwm.setPWM(lid_bl, 0, pulse90);
+    pwm.setPWM(lid_tl, 0, pulse90);
+    pwm.setPWM(lid_br, 0, pulse90);
+    pwm.setPWM(lid_tr, 0, pulse90);
+    delay(1000);
+
+    // pwm.setPWM(look_ud, 0, angleToPulse(UP_MAX));
+    // delay(1000);
+    // pwm.setPWM(look_ud, 0, angleToPulse(DOWN_MAX));
+    // delay(1000);
+
+    // pwm.setPWM(look_ud, 0, pulse90);
+    // blink();
+}
+
+
+void loop() {
+    int step = 1;
+
+    // Sweep left and right
+    for (int angle = 90; angle <= LEFT_MAX; angle += step) {
+        pwm.setPWM(look_lr, 0, angleToPulse(angle));
+        delay(MG90_DELAY_MS);
+    }
+    delay(1000);
+    for (int angle = LEFT_MAX; angle >= RIGHT_MAX; angle -= step) {
+        pwm.setPWM(look_lr, 0, angleToPulse(angle));
+        delay(MG90_DELAY_MS);
+    }
+    delay(1000);
+    for (int angle = RIGHT_MAX; angle <= 90; angle += step) {
+        pwm.setPWM(look_lr, 0, angleToPulse(angle));
+        delay(MG90_DELAY_MS);
+    }
+    delay(1000);
+
+
+    // Up and down
+    // for (int angle = 90; angle <= UP_MAX; angle += step) {
+    //     pwm.setPWM(look_ud, 0, angleToPulse(angle));
+    //     delay(500);
+    // }
+    // delay(1000);
+    // for (int angle = UP_MAX; angle >= DOWN_MAX; angle -= step) {
+    //     pwm.setPWM(look_ud, 0, angleToPulse(angle));
+    //     delay(500);
+    // }
+    // delay(1000);
+    // for (int angle = DOWN_MAX; angle <= 90; angle += step) {
+    //     pwm.setPWM(look_ud, 0, angleToPulse(angle));
+    //     delay(500);
+    // }
+    // delay(1000);
+ 
+}
+
+
 void data_handler(z_loaned_sample_t *sample, void *arg) {
     z_view_string_t keystr;
     z_keyexpr_as_view_string(z_sample_keyexpr(sample), &keystr);
@@ -54,7 +184,6 @@ void data_handler(z_loaned_sample_t *sample, void *arg) {
 
     // Check if the value is odd and blink the LED
     if (intValue % 2 != 0) { // Check if the value is odd
-    // if (1) {
         digitalWrite(LED_BUILTIN, HIGH); // Turn the LED on
         delay(500);                      // Wait for 500ms
         digitalWrite(LED_BUILTIN, LOW);  // Turn the LED off
@@ -63,7 +192,7 @@ void data_handler(z_loaned_sample_t *sample, void *arg) {
     z_string_drop(z_string_move(&value));
 }
 
-void setup() {
+void _setup() {
     // Initialize Serial for debug
     Serial.begin(115200);
     while (!Serial) {
@@ -134,7 +263,7 @@ void setup() {
     delay(300);
 }
 
-void loop() { delay(1000); }
+void _loop() { delay(1000); }
 
 #else
 void setup() {
