@@ -3,3 +3,9 @@
 .vscode/c_cpp_properties.json
 .vscode/launch.json
 .vscode/ipch
+
+# Ignore generated files
+lib/*
+!lib/README
+include/*
+!include/README

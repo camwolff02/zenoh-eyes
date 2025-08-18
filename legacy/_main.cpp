@@ -21,8 +21,8 @@
 
 #if Z_FEATURE_SUBSCRIPTION == 1
 // WiFi-specific parameters
-#define SSID "nectocaris"
-#define PASS "idontknowithinkitswrittendown?"
+#define SSID "The Social Network"
+#define PASS "rpi_rover"
 
 // Client mode values (comment/uncomment as needed)
 #define MODE "client"
@@ -31,7 +31,7 @@
 // #define MODE "peer"
 // #define LOCATOR "udp/224.0.0.225:7447#iface=en0"
 
-#define KEYEXPR "myhome/kitchen/temp"
+#define KEYEXPR "robot/eye_command"
 
 #define LED_BUILTIN 2
 

@@ -1,0 +1,17 @@
+{
+  // optional; zenohd runs as a router by default
+  mode: "router",
+
+  listen: {
+    // one or more unicast listeners
+    endpoints: ["tcp/0.0.0.0:7447"]
+  },
+
+  scouting: {
+    multicast: { enabled: false }  // keep the air quiet at cons
+  }
+
+  // optional: kill the REST plugin if you don't want port 8000 open
+  // plugins: { rest: { http_port: "none" } }
+}
+

@@ -1,0 +1,43 @@
+version = 1
+revision = 1
+requires-python = ">=3.10"
+
+[[package]]
+name = "eclipse-zenoh"
+version = "1.5.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/3d/6e/e3dca1c002076c92e28eae821e8d42be0d1706c1280fed0c7d5a4f0a9150/eclipse_zenoh-1.5.0.tar.gz", hash = "sha256:63fb0c4e16ecfa4e81213bc62c557a20616fd99607b126dbed98e0654d32cd0e", size = 128884 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/89/e2/52c85c759f6f8a1823ac75f20d0883fc4665c4de913013bba1fb70183b86/eclipse_zenoh-1.5.0-cp38-abi3-linux_armv6l.whl", hash = "sha256:58f4494f37a087f4d37b2a9b3ad2f6c46e43367e508de7a94b3a8c2848f25818", size = 9006833 },
+    { url = "https://files.pythonhosted.org/packages/90/29/690c887e08cc1ef6837d4a0b18a9814302af5d058e03124ee4253ac99890/eclipse_zenoh-1.5.0-cp38-abi3-macosx_10_12_x86_64.macosx_11_0_arm64.macosx_10_12_universal2.whl", hash = "sha256:d41591fd6aaa700f2331c1e3325b4a993592ceb1cc3d94b746822056ab55d28c", size = 16666051 },
+    { url = "https://files.pythonhosted.org/packages/40/e9/54b05ea90e0bab2015843646fe296a660c957a4c4a74322264281a2e8777/eclipse_zenoh-1.5.0-cp38-abi3-macosx_10_12_x86_64.whl", hash = "sha256:3c168303c5fd9c9560f12e35d498dfcf53a0992b636f26bc2349c92eff54a21c", size = 8520001 },
+    { url = "https://files.pythonhosted.org/packages/05/61/8d1f8977e21a8d810072ecc5e36f77cb8ec0c8caecfda99c158c3b50f208/eclipse_zenoh-1.5.0-cp38-abi3-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:4a968202e569cac42650c3551943ae1423b1b8517fbb38d4b2f07b5bf79c5fe2", size = 8892778 },
+    { url = "https://files.pythonhosted.org/packages/8d/18/5119282e150cd9fd52246379e47db0d87bd819a091050c4b8bda00e59ff5/eclipse_zenoh-1.5.0-cp38-abi3-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:58b3ed8a7876ed60d0eb8cbb1cfb9d40a00116b0feb4a227f5f9ff3ad5cf3d48", size = 9650223 },
+    { url = "https://files.pythonhosted.org/packages/df/ef/f9d45f686364d96240569faca212f0d55c96f2d0e20524dbb12f415314f0/eclipse_zenoh-1.5.0-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:5304c4a990b3a92de231eb88ffd335b46b7237b4c95ec94834808cb15c4fcef3", size = 9163500 },
+    { url = "https://files.pythonhosted.org/packages/35/dc/c4f16faef830e221a1fd3eb81205abdb75324389c914408029706ba60fe2/eclipse_zenoh-1.5.0-cp38-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:b672a5fd266e9fe04d9afdb3f869006ea331aa4d0f5f9fd1f53955eb889f5fad", size = 9029215 },
+    { url = "https://files.pythonhosted.org/packages/53/f4/a1c3cf7860089bdd880cedfc65eb41fa73e91428a4968d30e79cebcdbc84/eclipse_zenoh-1.5.0-cp38-abi3-win_amd64.whl", hash = "sha256:2d37a33652d7e363da20dd15aba5133532e9ead3e368fc60df3b98a645aae88b", size = 7493570 },
+]
+
+[[package]]
+name = "flatbuffers"
+version = "25.2.10"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e4/30/eb5dce7994fc71a2f685d98ec33cc660c0a5887db5610137e60d8cbc4489/flatbuffers-25.2.10.tar.gz", hash = "sha256:97e451377a41262f8d9bd4295cc836133415cc03d8cb966410a4af92eb00d26e", size = 22170 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b8/25/155f9f080d5e4bc0082edfda032ea2bc2b8fab3f4d25d46c1e9dd22a1a89/flatbuffers-25.2.10-py2.py3-none-any.whl", hash = "sha256:ebba5f4d5ea615af3f7fd70fc310636fbb2bbd1f566ac0a23d98dd412de50051", size = 30953 },
+]
+
+[[package]]
+name = "zenoh-eyes"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "eclipse-zenoh" },
+    { name = "flatbuffers" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "eclipse-zenoh", specifier = ">=1.5.0" },
+    { name = "flatbuffers", specifier = ">=25.2.10" },
+]

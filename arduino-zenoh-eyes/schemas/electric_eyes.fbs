@@ -1,0 +1,12 @@
+// flatc --python -o zenoh_eyes schemas/electric_eyes.fbs`
+// flatc --cpp -o include schemas/electric_eyes.fbs
+namespace electric_eyes;
+
+table EyeCommand {
+    look_ud: short;  // [deg], -90 down, 0 straight, 90 up
+    look_lr: short;  // [deg], -90 right, 0 straight, 90 left
+    eye_sep: ushort;  // [deg], 0 closed, 90 open
+    blink: bool;  // True for blinking, False otherwise
+}
+
+root_type EyeCommand;

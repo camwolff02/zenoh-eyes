@@ -1,0 +1,17 @@
+{
+  mode: "router",
+  listen: { endpoints: ["tcp/0.0.0.0:7447"] },
+  scouting: {
+    multicast: {
+      enabled: true
+      // Bind discovery to the Wi-Fi NIC only (adjust if yours differs).
+      // interface: "wlan0"
+      // interface: "en0"
+      // address: "224.0.0.224:7446"   // (optional) default discovery group/port
+    }
+  },
+
+  // (optional) keep REST closed
+  // plugins: { rest: { http_port: "none" } }
+}
+
