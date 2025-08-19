@@ -10,13 +10,13 @@ from zenoh import Config
 from rich.console import Console
 from rich.live import Live
 from rich.panel import Panel
-from rich.columns import Columns
 from rich.text import Text
 from rich.table import Table
 from rich.style import Style
 from rich.layout import Layout
 
 from electric_eyes import EyeCommand
+
 
 # ------------------ CLI ----------------------
 def parse_args():
@@ -40,22 +40,30 @@ def parse_args():
     p.add_argument("--sep0", type=int, default=90)
     # Zenoh
     p.add_argument("--keyexpr", default="robot/eye_command")
-    p.add_argument("--endpoint", action="append",
-                   help="Zenoh endpoint, e.g. tcp/192.168.68.136:7447 (repeatable)")
+    p.add_argument("--endpoint", action="append", help="Zenoh endpoint, e.g. tcp/192.168.68.136:7447 (repeatable)")
     p.add_argument("--rate-hz", type=float, default=30.0, help="publish rate (Hz)")
     # UI
-    p.add_argument("--no-eye", action="store_true",
-                   help="Run without the Eye panel (controls + state only)")
+    p.add_argument("--no-eye", action="store_true", help="Run without the Eye panel (controls + state only)")
     # in parse_args()
-    p.add_argument("--blink-ms", type=int, default=350,
-               help="UI blink animation duration in milliseconds")
-    p.add_argument("--aspect", type=float, default=1.5,
-                help="Vertical compensation factor (rows are taller). 1.0=no compensation; Increasing means more circular, decreasing means more oblong.")
+    p.add_argument("--blink-ms", type=int, default=350, help="UI blink animation duration in milliseconds")
+    p.add_argument(
+        "--aspect",
+        type=float,
+        default=1.5,
+        help=(
+            "Vertical compensation factor (rows are taller). 1.0=no compensation; "
+            "Increasing means more circular, decreasing means more oblong."
+        ),
+    )
+    p.add_argument("--rim", type=int, default=1, help="Limbal ring thickness in cells (0 disables)")
 
     return p.parse_args()
 
+
 # ------------------ Utils --------------------
-def clamp(v, lo, hi): return max(lo, min(hi, v))
+def clamp(v, lo, hi):
+    return max(lo, min(hi, v))
+
 
 def build_eye_cmd(lr, ud, sep, blink):
     b = flatbuffers.Builder(0)
@@ -67,6 +75,7 @@ def build_eye_cmd(lr, ud, sep, blink):
     eye = EyeCommand.EyeCommandEnd(b)
     b.Finish(eye)
     return b.Output()
+
 
 # ------------------ Key reader ----------------
 class KeyReader:
@@ -81,6 +90,7 @@ class KeyReader:
                      BLINK, RESET, QUIT
                      (plus Vim: h/j/k/l)
     """
+
     def __init__(self):
         self.win = os.name == "nt"
         self._use_blessed = False
@@ -90,6 +100,7 @@ class KeyReader:
         # Try high-level library first
         try:
             from blessed import Terminal  # type: ignore
+
             self._blessed_term = Terminal()
             # enter cbreak (raw-ish) mode so inkey() is instantaneous
             self._blessed_cbreak_ctx = self._blessed_term.cbreak()
@@ -102,9 +113,11 @@ class KeyReader:
         if not self._use_blessed:
             if self.win:
                 import msvcrt
+
                 self.msvcrt = msvcrt
             else:
                 import termios, tty, fcntl
+
                 self.termios = termios
                 self.tty = tty
                 self.fcntl = fcntl
@@ -136,27 +149,41 @@ class KeyReader:
     @staticmethod
     def _map_action_from_char(ch: str):
         mapping = {
-            "q":"QUIT", "Q":"QUIT",
-            "b":"BLINK", "B":"BLINK",
-            "r":"RESET", "R":"RESET",
+            "q": "QUIT",
+            "Q": "QUIT",
+            "b": "BLINK",
+            "B": "BLINK",
+            "r": "RESET",
+            "R": "RESET",
             # eyelids on w/s
-            "w":"SEP_UP", "W":"SEP_UP",
-            "s":"SEP_DOWN", "S":"SEP_DOWN",
+            "w": "SEP_UP",
+            "W": "SEP_UP",
+            "s": "SEP_DOWN",
+            "S": "SEP_DOWN",
             # step size on +/- and =
-            "+":"STEP_INC", "=":"STEP_INC",
-            "-":"STEP_DEC", "_":"STEP_DEC",
+            "+": "STEP_INC",
+            "=": "STEP_INC",
+            "-": "STEP_DEC",
+            "_": "STEP_DEC",
             # movement (vim)
-            "h":"LEFT", "l":"RIGHT", "k":"UP", "j":"DOWN",
+            "h": "LEFT",
+            "l": "RIGHT",
+            "k": "UP",
+            "j": "DOWN",
         }
         return mapping.get(ch)
 
     @staticmethod
     def _map_action_from_name(name: str):
         # blessed names like 'KEY_LEFT', 'KEY_RIGHT', etc.
-        if name in ("KEY_LEFT",):  return "LEFT"
-        if name in ("KEY_RIGHT",): return "RIGHT"
-        if name in ("KEY_UP",):    return "UP"
-        if name in ("KEY_DOWN",):  return "DOWN"
+        if name in ("KEY_LEFT",):
+            return "LEFT"
+        if name in ("KEY_RIGHT",):
+            return "RIGHT"
+        if name in ("KEY_UP",):
+            return "UP"
+        if name in ("KEY_DOWN",):
+            return "DOWN"
         return None
 
     @staticmethod
@@ -165,7 +192,7 @@ class KeyReader:
         if not seq or seq[0] != "\x1b":
             return None
         final = seq[-1]
-        return {"A":"UP", "B":"DOWN", "C":"RIGHT", "D":"LEFT"}.get(final)
+        return {"A": "UP", "B": "DOWN", "C": "RIGHT", "D": "LEFT"}.get(final)
 
     # -------- Public API --------
     def get_all_keys(self):
@@ -199,7 +226,7 @@ class KeyReader:
                 ch = self.msvcrt.getwch()
                 if ch in ("\x00", "\xe0"):
                     code = self.msvcrt.getwch()
-                    actions.append({"K":"UP","P":"DOWN","M":"RIGHT","H":"LEFT"}.get(code))
+                    actions.append({"K": "UP", "P": "DOWN", "M": "RIGHT", "H": "LEFT"}.get(code))
                 else:
                     actions.append(self._map_action_from_char(ch))
             return [a for a in actions if a]
@@ -225,7 +252,8 @@ class KeyReader:
             ch = self._buf[i]
             if ch != "\x1b":
                 act = self._map_action_from_char(ch)
-                if act: actions.append(act)
+                if act:
+                    actions.append(act)
                 i += 1
                 continue
 
@@ -234,16 +262,17 @@ class KeyReader:
             # SS3: \x1b O final
             if i + 1 >= n:
                 break  # incomplete, keep for next frame
-            nxt = self._buf[i+1]
+            nxt = self._buf[i + 1]
             if nxt in ("[", "O"):
                 # scan forward until we hit a letter A–Z or run out
                 j = i + 2
                 while j < n and not self._buf[j].isalpha():
                     j += 1
                 if j < n:
-                    seq = self._buf[i:j+1]
+                    seq = self._buf[i : j + 1]
                     act = self._map_esc_sequence(seq)
-                    if act: actions.append(act)
+                    if act:
+                        actions.append(act)
                     i = j + 1
                     continue
                 else:
@@ -256,102 +285,99 @@ class KeyReader:
         self._buf = self._buf[i:]
         return actions
 
+
 # ------------------ Eye renderer --------------
 S_SCLERA = Style(bgcolor="white")
-S_IRIS   = Style(bgcolor="#1e90ff")
+S_IRIS = Style(bgcolor="#1e90ff")
 S_IRIS_LIGHT = Style(bgcolor="#5ec8ff")
-S_IRIS_DARK  = Style(bgcolor="#0b5ed7")
-S_PUPIL  = Style(bgcolor="black")
-S_VEIN   = Style(color="red", bgcolor="white")
+S_IRIS_DARK = Style(bgcolor="#0b5ed7")
+S_PUPIL = Style(bgcolor="black")
+S_VEIN = Style(color="red", bgcolor="white")
 
-def render_eye(width, height, lr, ud, sep, aspect: float = 0.55) -> Text:
+
+def render_eye(width, height, lr, ud, sep, aspect: float = 0.55, rim: int = 1) -> Text:
     """
-    Circular eye (with vertical 'aspect' compensation) where the sclera remains visible,
-    but the iris can move all the way to the edge at extreme LR/UD.
-
-    - Circle boundary: ex^2 + (ey*aspect)^2 <= r^2
-    - Eyelids (SEP) occlude along rounded arcs in compensated space
-    - Iris displacement computed so ellipse is tangent to circle at extremes
+    Circular eye with optical compensation where:
+      - Sclera (white) stays visible.
+      - Iris can move to the edge at extreme LR/UD.
+      - A limbal ring (dark ring) is drawn along the IRIS boundary (not the sclera edge).
+      - Eyelids occlude along rounded arcs in compensated space.
     """
     from math import cos, pi, sqrt
 
-    width  = max(32, width)
+    width = max(32, width)
     height = max(12, height)
     txt = Text(no_wrap=True)
 
-    # Panel center
     cx, cy = width // 2, height // 2
 
-    # ----- FIXED CIRCLE with optical compensation -----
-    half_w = (width  - 2) // 2
-    half_h = (height - 2) // 2
+    lr *= -1  # Flip LR for rendering
+
+    # ---- Fixed circle with vertical optical compensation ----
     aspect = max(0.01, float(aspect))
-    r = max(6, min(half_w, int(half_h * aspect)))   # radius in compensated metric
+    half_w = (width - 2) // 2
+    half_h = (height - 2) // 2
+    r = max(6, min(half_w, int(half_h * aspect)))  # radius in compensated metric
     r2 = r * r
 
     # Eyelid aperture (0..90) -> [0..1]
     aperture = max(0.0, min(1.0, sep / 90.0))
 
-    # ---- Base sizes from r (constant eye geometry) ----
-    iris_base  = max(2, int(r * 0.50))
+    # ---- Base sizes from r ----
+    iris_base = max(2, int(r * 0.50))
     pupil_base = max(1, int(iris_base * 0.38))
 
-    # Perspective foreshortening (squash)
+    # Perspective foreshortening
     s_h = 0.35 + 0.65 * cos(abs(lr) * pi / 180.0)
     s_v = 0.35 + 0.65 * cos(abs(ud) * pi / 180.0)
 
-    # Iris/pupil ellipse semi-axes (measured: x in pixels, y in *compensated* units)
-    iris_rx  = max(1, int(iris_base  * s_h))
-    iris_ry  = max(1, int(iris_base  * s_v))
+    # Iris/pupil ellipse semi-axes (x in pixels, y in compensated units)
+    iris_rx = max(1, int(iris_base * s_h))
+    iris_ry = max(1, int(iris_base * s_v))
     pupil_rx = max(1, int(pupil_base * s_h))
     pupil_ry = max(1, int(pupil_base * s_v))
 
-    # ----- Displacement so the iris can reach the edge -----
-    # Work in compensated space (x, y_c = y*aspect).
-    # Direction vector from LR/UD in [-1,1]; signs: LR>0 (left), UD>0 (up).
-    ux_raw = -lr / 90.0  # left is negative x screenwise
-    uy_raw =  ud / 90.0  # up is negative y pixels, but positive in compensated before conversion
-    norm = sqrt(ux_raw * ux_raw + uy_raw * uy_raw)
-    if norm > 0:
-        ux = ux_raw / norm
-        uy = uy_raw / norm
-        # Support radius of the iris ellipse in direction (ux, uy) (compensated space):
-        # h = sqrt( (a*ux)^2 + (b*uy)^2 )
+    # ----- Displace iris so it can reach the edge at extremes -----
+    ux_raw = -lr / 90.0  # LR>0 (left) moves center to screen-left
+    uy_raw = ud / 90.0  # UD>0 (up) moves center up (compensated)
+    mag = sqrt(ux_raw * ux_raw + uy_raw * uy_raw)
+    if mag > 0:
+        ux = ux_raw / mag
+        uy = uy_raw / mag
+        # Support function of ellipse in direction (ux,uy) in compensated space:
         h_ellipse = sqrt((iris_rx * ux) ** 2 + (iris_ry * uy) ** 2)
-        # Max displacement to be tangent to the circle:
-        D_max = max(0.0, r - h_ellipse)
-        # Use magnitude of input vector (clamped to 1) to scale displacement
-        m = min(1.0, norm)
-        Dx_c = m * D_max * ux           # compensated x displacement
-        Dy_c = m * D_max * uy           # compensated y displacement
+        D_max = max(0.0, r - h_ellipse)  # tangent to circle at extremes
+        Dx_c = (min(1.0, mag) * D_max) * ux
+        Dy_c = (min(1.0, mag) * D_max) * uy
     else:
-        Dx_c = 0.0
-        Dy_c = 0.0
+        Dx_c = Dy_c = 0.0
 
-    # Convert compensated center shift to pixel coords:
     iris_cx = cx + int(round(Dx_c))
-    # UD>0 (up) should move center up → subtract pixel rows; Dy_c is in compensated units
-    iris_cy = cy - int(round(Dy_c / aspect))
+    iris_cy = cy - int(round(Dy_c / aspect))  # convert compensated back to pixels
 
-    # Veins “stick” to the eyeball: shift texture by same displacement (in pixels)
+    # Veins stick to eyeball texture (match iris displacement)
     tshift_x = int(round(Dx_c))
     tshift_y = -int(round(Dy_c / aspect))
 
-    # Lighting direction (near/far)
+    # Lighting vector (near/far)
     d_lr = max(-1.0, min(1.0, -lr / 90.0))
-    d_ud = max(-1.0, min(1.0,  ud / 90.0))
+    d_ud = max(-1.0, min(1.0, ud / 90.0))
 
-    # Quick row-level occlusion bound for eyelids (in compensated units)
-    # y_cap_c(x) = aperture * sqrt(r^2 - ex^2). We'll compute per-column inside the loop.
+    # Precompute normalized rim thickness (as fraction of iris radius)
+    # Convert pixel 'rim' into normalized ellipse thickness ~ rim / mean_axis
+    mean_axis = max(1.0, (iris_rx + iris_ry) / 2.0)
+    rim_norm = max(0.0, float(rim)) / mean_axis  # 0 disables
+
     for y in range(height):
         row = Text(no_wrap=True)
         ey = y - cy
         eyc = ey * aspect
 
-        # If completely outside max opening, fill with spaces
+        # Quick skip: completely closed or outside circle vertically
         if aperture <= 0.0 or abs(eyc) > r:
             txt.append(" " * width)
-            if y != height - 1: txt.append("\n")
+            if y != height - 1:
+                txt.append("\n")
             continue
 
         for x in range(width):
@@ -374,37 +400,44 @@ def render_eye(width, height, lr, ud, sep, aspect: float = 0.55) -> Text:
                 row.append(" ")
                 continue
 
-            # Iris/pupil test in ellipse space (y compensated around iris center)
+            # Iris/pupil test (ellipse in compensated space)
             dx_i = x - iris_cx
             dy_i_c = (y - iris_cy) * aspect
 
             # Pupil first
-            up = dx_i   / max(1, pupil_rx)
+            up = dx_i / max(1, pupil_rx)
             vp = dy_i_c / max(1, pupil_ry)
             if (up * up + vp * vp) <= 1.0:
                 row.append(" ", style=S_PUPIL)
                 continue
 
             # Iris
-            u = dx_i   / max(1, iris_rx)
+            u = dx_i / max(1, iris_rx)
             v = dy_i_c / max(1, iris_ry)
             r2_iris = u * u + v * v
             if r2_iris <= 1.0:
-                # Limbal darkening by distance to circle (keeps ring near edge of sclera)
-                radial2 = ex * ex + eyc * eyc
-                if radial2 >= (0.90 * r) ** 2:
+                # --- Limbal ring near IRIS boundary (not sclera boundary) ---
+                if rim_norm > 0.0:
+                    q = sqrt(max(0.0, r2_iris))  # 0..1 inside ellipse
+                    if q >= (1.0 - rim_norm):
+                        row.append(" ", style=S_IRIS_DARK)
+                        txt.append(row) if False else None  # keep structure identical
+                        # Fall-through avoided by continue:
+                        continue
+
+                # Iris shading: near/far lighting
+                dot = (u * d_lr) + (v * (-d_ud))
+                if dot > 0.25:
+                    style = S_IRIS_LIGHT
+                elif dot < -0.25:
                     style = S_IRIS_DARK
                 else:
-                    dot = (u * d_lr) + (v * (-d_ud))
-                    if   dot >  0.25: style = S_IRIS_LIGHT
-                    elif dot < -0.25: style = S_IRIS_DARK
-                    else:             style = S_IRIS
+                    style = S_IRIS
                 row.append(" ", style=style)
             else:
-                # Sclera with moving veins (texture shifted by eyeball motion)
+                # Sclera with moving veins
                 tx = x + tshift_x
                 ty = y + tshift_y
-                # subtle perspective squash for vein texture
                 tx_s = int(cx + (tx - cx) / max(0.7, s_h))
                 ty_s = int(cy + (ty - cy) / max(0.7, s_v))
                 if ((tx_s * 13 + ty_s * 7) % 97 == 0) or ((tx_s + 2 * ty_s) % 59 == 0 and (tx_s ^ ty_s) & 3 == 0):
@@ -413,13 +446,15 @@ def render_eye(width, height, lr, ud, sep, aspect: float = 0.55) -> Text:
                     row.append(" ", style=S_SCLERA)
 
         txt.append(row)
-        if y != height - 1: txt.append("\n")
+        if y != height - 1:
+            txt.append("\n")
 
     return txt
 
+
 # ------------------ Panels --------------------
 def controls_panel() -> Panel:
-    t = Table.grid(padding=(0,1))
+    t = Table.grid(padding=(0, 1))
     t.add_row("[bold]Controls[/bold]")
     t.add_row("←/h: LR−", "→/l: LR+")
     t.add_row("↑/k: UD+", "↓/j: UD−")
@@ -430,6 +465,7 @@ def controls_panel() -> Panel:
     t.add_row("[dim]q: Quit[/dim]")
     return Panel(t, title="Controls", border_style="magenta")
 
+
 def state_panel(lr, ud, sep, limits, rate_hz, keyexpr, endpoints, blinking: bool, steps=None) -> Panel:
     def bar(val, lo, hi, width=20):
         ratio = 0 if hi == lo else (val - lo) / (hi - lo)
@@ -439,7 +475,7 @@ def state_panel(lr, ud, sep, limits, rate_hz, keyexpr, endpoints, blinking: bool
         return f"{s} {val:>4}"
 
     eps = ", ".join(endpoints) if endpoints else "(discovery)"
-    t = Table.grid(padding=(0,1))
+    t = Table.grid(padding=(0, 1))
     t.add_row(f"LR  {bar(lr, limits['lr'][0],  limits['lr'][1])}")
     t.add_row(f"UD  {bar(ud, limits['ud'][0],  limits['ud'][1])}")
     t.add_row(f"SEP {bar(sep, limits['sep'][0], limits['sep'][1])}")
@@ -451,6 +487,7 @@ def state_panel(lr, ud, sep, limits, rate_hz, keyexpr, endpoints, blinking: bool
     t.add_row(f"[dim]Endpoints:[/dim] {eps}")
     return Panel(t, title="State", border_style="cyan")
 
+
 # ------------------ Zenoh wrapper -------------
 class ZPub:
     def __init__(self, keyexpr, endpoints):
@@ -458,20 +495,26 @@ class ZPub:
         self.endpoints = endpoints or []
         self.session = None
         self.pub = None
+
     def open(self):
         conf = Config()
         if self.endpoints:
             conf.insert_json5("connect/endpoints", json.dumps(self.endpoints))
         self.session = zenoh.open(conf)
         self.pub = self.session.declare_publisher(self.keyexpr)
+
     def close(self):
         try:
-            if self.pub: self.pub.close()
+            if self.pub:
+                self.pub.close()
         finally:
-            if self.session: self.session.close()
+            if self.session:
+                self.session.close()
+
     def put(self, lr, ud, sep, blink=False):
         if self.pub:
             self.pub.put(build_eye_cmd(lr, ud, sep, blink))
+
 
 # ------------------ Main loop -----------------
 def main():
@@ -486,8 +529,8 @@ def main():
 
     # Step increments and limits
     steps = {
-        "lr":  clamp(args.step_lr,  args.step_min, args.step_max),
-        "ud":  clamp(args.step_ud,  args.step_min, args.step_max),
+        "lr": clamp(args.step_lr, args.step_min, args.step_max),
+        "ud": clamp(args.step_ud, args.step_min, args.step_max),
         "sep": clamp(args.step_sep, args.step_min, args.step_max),
     }
 
@@ -496,9 +539,7 @@ def main():
     blink_active = False
     blink_t0 = 0.0
 
-    limits = {"lr": (args.lr_min, args.lr_max),
-              "ud": (args.ud_min, args.ud_max),
-              "sep": (args.sep_min, args.sep_max)}
+    limits = {"lr": (args.lr_min, args.lr_max), "ud": (args.ud_min, args.ud_max), "sep": (args.sep_min, args.sep_max)}
 
     pub = ZPub(args.keyexpr, args.endpoint)
     try:
@@ -539,12 +580,12 @@ def main():
                     elif key == "SEP_DOWN":
                         sep = clamp(sep - steps["sep"], *limits["sep"])
                     elif key == "STEP_INC":
-                        steps["lr"]  = clamp(steps["lr"]  + 1, args.step_min, args.step_max)
-                        steps["ud"]  = clamp(steps["ud"]  + 1, args.step_min, args.step_max)
+                        steps["lr"] = clamp(steps["lr"] + 1, args.step_min, args.step_max)
+                        steps["ud"] = clamp(steps["ud"] + 1, args.step_min, args.step_max)
                         steps["sep"] = clamp(steps["sep"] + 1, args.step_min, args.step_max)
                     elif key == "STEP_DEC":
-                        steps["lr"]  = clamp(steps["lr"]  - 1, args.step_min, args.step_max)
-                        steps["ud"]  = clamp(steps["ud"]  - 1, args.step_min, args.step_max)
+                        steps["lr"] = clamp(steps["lr"] - 1, args.step_min, args.step_max)
+                        steps["ud"] = clamp(steps["ud"] - 1, args.step_min, args.step_max)
                         steps["sep"] = clamp(steps["sep"] - 1, args.step_min, args.step_max)
 
                 # --- Periodic publish
@@ -570,9 +611,7 @@ def main():
 
                 controls = controls_panel()
                 state = state_panel(
-                    lr, ud, sep, limits,
-                    args.rate_hz, args.keyexpr, args.endpoint,
-                    blinking=blink_active, steps=steps
+                    lr, ud, sep, limits, args.rate_hz, args.keyexpr, args.endpoint, blinking=blink_active, steps=steps
                 )
 
                 # Eye spans the full width on the bottom row.
@@ -584,8 +623,9 @@ def main():
 
                 if not args.no_eye:
                     eye_panel = Panel(
-                        render_eye(eye_w, eye_h, lr, ud, vis_sep, args.aspect),
-                        title="Eye", border_style="green"
+                        render_eye(eye_w, eye_h, lr, ud, vis_sep, args.aspect, args.rim),
+                        title="Eye",
+                        border_style="green",
                     )
 
                 layout = Layout()
@@ -595,7 +635,7 @@ def main():
                 )
                 layout["top"].split_row(
                     Layout(controls, name="controls", ratio=1),
-                    Layout(state,    name="state",    ratio=1),
+                    Layout(state, name="state", ratio=1),
                 )
                 layout["eye"].update(eye_panel or Panel(Text("Eye disabled (--no-eye)"), title="Eye"))
 
@@ -610,6 +650,7 @@ def main():
             pub.close()
         except Exception:
             pass
+
 
 if __name__ == "__main__":
     main()
