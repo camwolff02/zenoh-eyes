@@ -5,9 +5,15 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "black>=25.1.0",
     "blessed>=1.21.0",
     "eclipse-zenoh>=1.5.0",
     "flatbuffers>=25.2.10",
+    "isort>=6.0.1",
+    "pylint>=3.3.8",
     "pyyaml>=6.0.2",
     "rich>=14.1.0",
 ]
+
+[tool.black]
+line-length = 120

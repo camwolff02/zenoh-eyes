@@ -14,6 +14,7 @@ from rich.columns import Columns
 from rich.text import Text
 from rich.table import Table
 from rich.style import Style
+from rich.layout import Layout
 
 from electric_eyes import EyeCommand
 
@@ -48,6 +49,8 @@ def parse_args():
     # in parse_args()
     p.add_argument("--blink-ms", type=int, default=350,
                help="UI blink animation duration in milliseconds")
+    p.add_argument("--aspect", type=float, default=1.5,
+                help="Vertical compensation factor (rows are taller). 1.0=no compensation; Increasing means more circular, decreasing means more oblong.")
 
     return p.parse_args()
 
@@ -261,78 +264,132 @@ S_IRIS_DARK  = Style(bgcolor="#0b5ed7")
 S_PUPIL  = Style(bgcolor="black")
 S_VEIN   = Style(color="red", bgcolor="white")
 
-def render_eye(width, height, lr, ud, sep) -> Text:
+def render_eye(width, height, lr, ud, sep, aspect: float = 0.55) -> Text:
+    """
+    Draw a circular eye with vertical 'aspect' compensation so it looks round
+    in terminals where rows are taller than columns.
+
+    aspect < 1 compresses vertical distances in the math (typical 0.5–0.6).
+    """
     from math import cos, pi, sqrt
-    width = max(32, width)
+
+    width  = max(32, width)
     height = max(12, height)
     txt = Text(no_wrap=True)
+
+    # Center of panel
     cx, cy = width // 2, height // 2
-    rx, ry = max(8, (width - 2) // 2), max(4, (height - 2) // 2)
 
+    # ---- FIXED CIRCLE with optical compensation ----
+    # For a circle test ex^2 + (ey*aspect)^2 <= r^2 to fit within the panel,
+    # r must be <= half-width AND <= (half-height * aspect).
+    half_w = (width  - 2) // 2
+    half_h = (height - 2) // 2
+    r = max(6, min(half_w, int(half_h * max(0.01, aspect))))  # guard aspect>0
+    r2 = r * r
+
+    # Eyelid aperture from SEP (0..90) -> [0..1]
     aperture = max(0.0, min(1.0, sep / 90.0))
-    open_half_y = int(ry * aperture)
+    # Coarse row-level occlusion bound (in compensated units)
+    open_half = int(r * aperture)
 
-    base_r = min(rx, ry)
-    iris_base  = max(2, int(base_r * 0.50))
+    # ---- Sizes from r (constant eye geometry) ----
+    iris_base  = max(2, int(r * 0.50))
     pupil_base = max(1, int(iris_base * 0.38))
+
+    # Foreshortening (cosine squash)
     s_h = 0.35 + 0.65 * cos(abs(lr) * pi / 180.0)
     s_v = 0.35 + 0.65 * cos(abs(ud) * pi / 180.0)
+
     iris_rx  = max(1, int(iris_base  * s_h))
     iris_ry  = max(1, int(iris_base  * s_v))
     pupil_rx = max(1, int(pupil_base * s_h))
     pupil_ry = max(1, int(pupil_base * s_v))
 
-    kx = 0.6; ky = 0.6
-    iris_cx = cx - int((-lr / 90.0) * rx * kx)
-    iris_cy = cy - int((ud  / 90.0) * ry * ky)
-    tshift_x = int((-lr / 90.0) * rx * kx)
-    tshift_y = int((ud  / 90.0) * ry * ky)
+    # Iris/pupil center (LR>0 left, UD>0 up). Vertical displacement uses r/aspect
+    # so the eyeball motion looks symmetric with the compensated geometry.
+    kx = 0.6
+    ky = 0.6
+    iris_cx = cx - int((-lr / 90.0) * r * kx)
+    iris_cy = cy - int((  ud / 90.0) * (r / max(0.01, aspect)) * ky)
+
+    # Vein texture shift so veins "stick" to eyeball (match iris motion scale)
+    tshift_x = int((-lr / 90.0) * r * kx)
+    tshift_y = int((  ud / 90.0) * (r / max(0.01, aspect)) * ky)
+
+    # Lighting direction (near/far)
     d_lr = max(-1.0, min(1.0, -lr / 90.0))
     d_ud = max(-1.0, min(1.0,  ud / 90.0))
 
-    rx2 = rx * rx; ry2 = ry * ry
     for y in range(height):
-        if aperture <= 0.0 or (y < cy - open_half_y) or (y > cy + open_half_y):
-            txt.append(" " * width); 
-            if y != height - 1: txt.append("\n")
+        # Quick row skip using compensated distance from center
+        if aperture <= 0.0 or abs((y - cy) * aspect) > open_half:
+            txt.append(" " * width)
+            if y != height - 1:
+                txt.append("\n")
             continue
+
         row = Text(no_wrap=True)
         for x in range(width):
-            ex, ey = x - cx, y - cy
-            if (ex * ex) / rx2 + (ey * ey) / ry2 > 1.0:
-                row.append(" "); continue
-            inner = 1.0 - (ex * ex) / rx2
-            if inner <= 0.0:
-                row.append(" "); continue
-            y_cap = int(aperture * ry * sqrt(inner))
-            if y < cy - y_cap or y > cy + y_cap:
-                row.append(" "); continue
+            ex = x - cx
+            ey = y - cy
+            eyc = ey * aspect  # compensated y
 
-            dx_i, dy_i = x - iris_cx, y - iris_cy
-            u = dx_i / max(1, iris_rx); v = dy_i / max(1, iris_ry)
-            r2_iris = u*u + v*v
-            up = dx_i / max(1, pupil_rx); vp = dy_i / max(1, pupil_ry)
-            r2_pupil = up*up + vp*vp
+            # Circle boundary with compensation
+            if (ex * ex + eyc * eyc) > r2:
+                row.append(" ")
+                continue
+
+            # Rounded eyelids per-x in compensated space:
+            # y_cap_c = aperture * sqrt(r^2 - ex^2)
+            inner = r2 - ex * ex
+            if inner <= 0:
+                row.append(" ")
+                continue
+            y_cap_c = int(aperture * sqrt(inner))  # compensated units
+            if abs(eyc) > y_cap_c:
+                row.append(" ")
+                continue
+
+            # Iris/pupil membership (use compensated dy for circular look)
+            dx_i = x - iris_cx
+            dy_i_c = (y - iris_cy) * aspect
+
+            u = dx_i   / max(1, iris_rx)
+            v = dy_i_c / max(1, iris_ry)
+            r2_iris = u * u + v * v
+
+            up = dx_i   / max(1, pupil_rx)
+            vp = dy_i_c / max(1, pupil_ry)
+            r2_pupil = up * up + vp * vp
 
             if r2_pupil <= 1.0:
                 row.append(" ", style=S_PUPIL)
             elif r2_iris <= 1.0:
+                # Iris shading: dark rim + near/far lighting
                 if r2_iris >= 0.75:
                     style = S_IRIS_DARK
                 else:
                     dot = (u * d_lr) + (v * (-d_ud))
-                    style = S_IRIS_LIGHT if dot > 0.25 else S_IRIS_DARK if dot < -0.25 else S_IRIS
+                    if   dot >  0.25: style = S_IRIS_LIGHT
+                    elif dot < -0.25: style = S_IRIS_DARK
+                    else:             style = S_IRIS
                 row.append(" ", style=style)
             else:
-                tx = x + tshift_x; ty = y + tshift_y
+                # Sclera with moving veins (keep a bit of perspective squash)
+                tx = x + tshift_x
+                ty = y + tshift_y
                 tx_s = int(cx + (tx - cx) / max(0.7, s_h))
                 ty_s = int(cy + (ty - cy) / max(0.7, s_v))
                 if ((tx_s * 13 + ty_s * 7) % 97 == 0) or ((tx_s + 2 * ty_s) % 59 == 0 and (tx_s ^ ty_s) & 3 == 0):
                     row.append("╱" if (tx_s + ty_s) % 2 else "╲", style=S_VEIN)
                 else:
                     row.append(" ", style=S_SCLERA)
+
         txt.append(row)
-        if y != height - 1: txt.append("\n")
+        if y != height - 1:
+            txt.append("\n")
+
     return txt
 
 # ------------------ Panels --------------------
@@ -482,22 +539,42 @@ def main():
                         blink_sep = int(args.sep_max * frac)
                         vis_sep = min(sep, blink_sep)
 
-                # --- Layout & render
+                # --- Layout & render (Eye below both columns)
                 term_w = console.size.width
                 term_h = console.size.height
-                side_w = 32
-                eye_w = max(30, term_w - (side_w * 2) - 4)
-                eye_h = max(12, term_h - 6)
 
-                panels = [controls_panel()]
+                controls = controls_panel()
+                state = state_panel(
+                    lr, ud, sep, limits,
+                    args.rate_hz, args.keyexpr, args.endpoint,
+                    blinking=blink_active, steps=steps
+                )
+
+                # Eye spans the full width on the bottom row.
+                # Estimate a reasonable drawing size; Rich will clip gracefully if needed.
+                eye_w = max(30, term_w - 4)
+                # Leave ~10–12 rows for the top row & borders; rest goes to the eye.
+                eye_h = max(12, term_h - 12)
+                eye_panel = None
+
                 if not args.no_eye:
-                    panels.append(Panel(render_eye(eye_w, eye_h, lr, ud, vis_sep),
-                                        title="Eye", border_style="green"))
-                panels.append(state_panel(lr, ud, sep, limits,
-                                          args.rate_hz, args.keyexpr, args.endpoint,
-                                          blinking=blink_active, steps=steps))
+                    eye_panel = Panel(
+                        render_eye(eye_w, eye_h, lr, ud, vis_sep, args.aspect),
+                        title="Eye", border_style="green"
+                    )
 
-                live.update(Columns(panels, expand=True, equal=False, column_first=True))
+                layout = Layout()
+                layout.split(
+                    Layout(name="top", ratio=1),
+                    Layout(name="eye", ratio=2),
+                )
+                layout["top"].split_row(
+                    Layout(controls, name="controls", ratio=1),
+                    Layout(state,    name="state",    ratio=1),
+                )
+                layout["eye"].update(eye_panel or Panel(Text("Eye disabled (--no-eye)"), title="Eye"))
+
+                live.update(layout)
                 time.sleep(0.005)
 
     except KeyboardInterrupt:
