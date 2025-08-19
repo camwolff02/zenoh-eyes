@@ -266,10 +266,12 @@ S_VEIN   = Style(color="red", bgcolor="white")
 
 def render_eye(width, height, lr, ud, sep, aspect: float = 0.55) -> Text:
     """
-    Draw a circular eye with vertical 'aspect' compensation so it looks round
-    in terminals where rows are taller than columns.
+    Circular eye (with vertical 'aspect' compensation) where the sclera remains visible,
+    but the iris can move all the way to the edge at extreme LR/UD.
 
-    aspect < 1 compresses vertical distances in the math (typical 0.5–0.6).
+    - Circle boundary: ex^2 + (ey*aspect)^2 <= r^2
+    - Eyelids (SEP) occlude along rounded arcs in compensated space
+    - Iris displacement computed so ellipse is tangent to circle at extremes
     """
     from math import cos, pi, sqrt
 
@@ -277,97 +279,120 @@ def render_eye(width, height, lr, ud, sep, aspect: float = 0.55) -> Text:
     height = max(12, height)
     txt = Text(no_wrap=True)
 
-    # Center of panel
+    # Panel center
     cx, cy = width // 2, height // 2
 
-    # ---- FIXED CIRCLE with optical compensation ----
-    # For a circle test ex^2 + (ey*aspect)^2 <= r^2 to fit within the panel,
-    # r must be <= half-width AND <= (half-height * aspect).
+    # ----- FIXED CIRCLE with optical compensation -----
     half_w = (width  - 2) // 2
     half_h = (height - 2) // 2
-    r = max(6, min(half_w, int(half_h * max(0.01, aspect))))  # guard aspect>0
+    aspect = max(0.01, float(aspect))
+    r = max(6, min(half_w, int(half_h * aspect)))   # radius in compensated metric
     r2 = r * r
 
-    # Eyelid aperture from SEP (0..90) -> [0..1]
+    # Eyelid aperture (0..90) -> [0..1]
     aperture = max(0.0, min(1.0, sep / 90.0))
-    # Coarse row-level occlusion bound (in compensated units)
-    open_half = int(r * aperture)
 
-    # ---- Sizes from r (constant eye geometry) ----
+    # ---- Base sizes from r (constant eye geometry) ----
     iris_base  = max(2, int(r * 0.50))
     pupil_base = max(1, int(iris_base * 0.38))
 
-    # Foreshortening (cosine squash)
+    # Perspective foreshortening (squash)
     s_h = 0.35 + 0.65 * cos(abs(lr) * pi / 180.0)
     s_v = 0.35 + 0.65 * cos(abs(ud) * pi / 180.0)
 
+    # Iris/pupil ellipse semi-axes (measured: x in pixels, y in *compensated* units)
     iris_rx  = max(1, int(iris_base  * s_h))
     iris_ry  = max(1, int(iris_base  * s_v))
     pupil_rx = max(1, int(pupil_base * s_h))
     pupil_ry = max(1, int(pupil_base * s_v))
 
-    # Iris/pupil center (LR>0 left, UD>0 up). Vertical displacement uses r/aspect
-    # so the eyeball motion looks symmetric with the compensated geometry.
-    kx = 0.6
-    ky = 0.6
-    iris_cx = cx - int((-lr / 90.0) * r * kx)
-    iris_cy = cy - int((  ud / 90.0) * (r / max(0.01, aspect)) * ky)
+    # ----- Displacement so the iris can reach the edge -----
+    # Work in compensated space (x, y_c = y*aspect).
+    # Direction vector from LR/UD in [-1,1]; signs: LR>0 (left), UD>0 (up).
+    ux_raw = -lr / 90.0  # left is negative x screenwise
+    uy_raw =  ud / 90.0  # up is negative y pixels, but positive in compensated before conversion
+    norm = sqrt(ux_raw * ux_raw + uy_raw * uy_raw)
+    if norm > 0:
+        ux = ux_raw / norm
+        uy = uy_raw / norm
+        # Support radius of the iris ellipse in direction (ux, uy) (compensated space):
+        # h = sqrt( (a*ux)^2 + (b*uy)^2 )
+        h_ellipse = sqrt((iris_rx * ux) ** 2 + (iris_ry * uy) ** 2)
+        # Max displacement to be tangent to the circle:
+        D_max = max(0.0, r - h_ellipse)
+        # Use magnitude of input vector (clamped to 1) to scale displacement
+        m = min(1.0, norm)
+        Dx_c = m * D_max * ux           # compensated x displacement
+        Dy_c = m * D_max * uy           # compensated y displacement
+    else:
+        Dx_c = 0.0
+        Dy_c = 0.0
 
-    # Vein texture shift so veins "stick" to eyeball (match iris motion scale)
-    tshift_x = int((-lr / 90.0) * r * kx)
-    tshift_y = int((  ud / 90.0) * (r / max(0.01, aspect)) * ky)
+    # Convert compensated center shift to pixel coords:
+    iris_cx = cx + int(round(Dx_c))
+    # UD>0 (up) should move center up → subtract pixel rows; Dy_c is in compensated units
+    iris_cy = cy - int(round(Dy_c / aspect))
+
+    # Veins “stick” to the eyeball: shift texture by same displacement (in pixels)
+    tshift_x = int(round(Dx_c))
+    tshift_y = -int(round(Dy_c / aspect))
 
     # Lighting direction (near/far)
     d_lr = max(-1.0, min(1.0, -lr / 90.0))
     d_ud = max(-1.0, min(1.0,  ud / 90.0))
 
+    # Quick row-level occlusion bound for eyelids (in compensated units)
+    # y_cap_c(x) = aperture * sqrt(r^2 - ex^2). We'll compute per-column inside the loop.
     for y in range(height):
-        # Quick row skip using compensated distance from center
-        if aperture <= 0.0 or abs((y - cy) * aspect) > open_half:
+        row = Text(no_wrap=True)
+        ey = y - cy
+        eyc = ey * aspect
+
+        # If completely outside max opening, fill with spaces
+        if aperture <= 0.0 or abs(eyc) > r:
             txt.append(" " * width)
-            if y != height - 1:
-                txt.append("\n")
+            if y != height - 1: txt.append("\n")
             continue
 
-        row = Text(no_wrap=True)
         for x in range(width):
             ex = x - cx
             ey = y - cy
-            eyc = ey * aspect  # compensated y
+            eyc = ey * aspect
 
-            # Circle boundary with compensation
+            # Circle boundary
             if (ex * ex + eyc * eyc) > r2:
                 row.append(" ")
                 continue
 
-            # Rounded eyelids per-x in compensated space:
-            # y_cap_c = aperture * sqrt(r^2 - ex^2)
+            # Rounded eyelids per-x in compensated space
             inner = r2 - ex * ex
             if inner <= 0:
                 row.append(" ")
                 continue
-            y_cap_c = int(aperture * sqrt(inner))  # compensated units
+            y_cap_c = aperture * sqrt(inner)
             if abs(eyc) > y_cap_c:
                 row.append(" ")
                 continue
 
-            # Iris/pupil membership (use compensated dy for circular look)
+            # Iris/pupil test in ellipse space (y compensated around iris center)
             dx_i = x - iris_cx
             dy_i_c = (y - iris_cy) * aspect
 
+            # Pupil first
+            up = dx_i   / max(1, pupil_rx)
+            vp = dy_i_c / max(1, pupil_ry)
+            if (up * up + vp * vp) <= 1.0:
+                row.append(" ", style=S_PUPIL)
+                continue
+
+            # Iris
             u = dx_i   / max(1, iris_rx)
             v = dy_i_c / max(1, iris_ry)
             r2_iris = u * u + v * v
-
-            up = dx_i   / max(1, pupil_rx)
-            vp = dy_i_c / max(1, pupil_ry)
-            r2_pupil = up * up + vp * vp
-
-            if r2_pupil <= 1.0:
-                row.append(" ", style=S_PUPIL)
-            elif r2_iris <= 1.0:
-                # Iris shading: dark rim + near/far lighting
-                if r2_iris >= 0.75:
+            if r2_iris <= 1.0:
+                # Limbal darkening by distance to circle (keeps ring near edge of sclera)
+                radial2 = ex * ex + eyc * eyc
+                if radial2 >= (0.90 * r) ** 2:
                     style = S_IRIS_DARK
                 else:
                     dot = (u * d_lr) + (v * (-d_ud))
@@ -376,9 +401,10 @@ def render_eye(width, height, lr, ud, sep, aspect: float = 0.55) -> Text:
                     else:             style = S_IRIS
                 row.append(" ", style=style)
             else:
-                # Sclera with moving veins (keep a bit of perspective squash)
+                # Sclera with moving veins (texture shifted by eyeball motion)
                 tx = x + tshift_x
                 ty = y + tshift_y
+                # subtle perspective squash for vein texture
                 tx_s = int(cx + (tx - cx) / max(0.7, s_h))
                 ty_s = int(cy + (ty - cy) / max(0.7, s_v))
                 if ((tx_s * 13 + ty_s * 7) % 97 == 0) or ((tx_s + 2 * ty_s) % 59 == 0 and (tx_s ^ ty_s) & 3 == 0):
@@ -387,8 +413,7 @@ def render_eye(width, height, lr, ud, sep, aspect: float = 0.55) -> Text:
                     row.append(" ", style=S_SCLERA)
 
         txt.append(row)
-        if y != height - 1:
-            txt.append("\n")
+        if y != height - 1: txt.append("\n")
 
     return txt
 
