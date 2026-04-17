@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: EPL-2.0 OR Apache-2.0
 #include "network.hpp"
-
+#include "helper.h"
 // Define static members
 SemaphoreHandle_t EyeNetworkInterface::eye_command_mtx = nullptr;
 const eye_interface::EyeCommand *EyeNetworkInterface::eye_command = nullptr;
@@ -13,9 +13,9 @@ z_owned_subscriber_t EyeNetworkInterface::g_sub = {};
 // ---------- Debug printing (factored out) -------------------------------------
 void EyeNetworkInterface::debug_print(const eye_interface::EyeCommand *s)
 {
-  Serial.printf("[cmd] ud=%d lr=%d sep=%u blink=%s\n",
+  DEBUG_CALL(Serial.printf("[cmd] ud=%d lr=%d sep=%u blink=%s\n",
                 (int)s->look_ud(), (int)s->look_lr(), (unsigned)s->eye_sep(),
-                s->blink() ? "true" : "false");
+                s->blink() ? "true" : "false"));
 }
 
 // ---------- Change detection helper -------------------------------------------
@@ -40,8 +40,8 @@ void EyeNetworkInterface::data_handler(z_loaned_sample_t *sample, void * /*arg*/
   if (len > BUF_MAX)
   {
     // Too big — drop (schema is tiny; this should never happen)
-    Serial.printf(">> [sub] payload too large (%u > %u), dropping\n",
-                  (unsigned)len, (unsigned)BUF_MAX);
+    DEBUG_CALL(Serial.printf(">> [sub] payload too large (%u > %u), dropping\n",
+                  (unsigned)len, (unsigned)BUF_MAX));
     z_string_drop(z_string_move(&payload));
     return;
   }
@@ -82,7 +82,7 @@ void EyeNetworkInterface::create_semaphores()
 void EyeNetworkInterface::connect_wifi()
 {
   // ============================= Wi-Fi / setup =================================
-  Serial.print("Connecting to WiFi ... ");
+  DEBUG_CALL(Serial.print("Connecting to WiFi ... "));
   WiFi.setSleep(false);
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASS);
@@ -90,15 +90,15 @@ void EyeNetworkInterface::connect_wifi()
   while (WiFi.status() != WL_CONNECTED)
   {
     delay(250);
-    Serial.print(".");
+    DEBUG_CALL(Serial.print("."));
     if (millis() - start > 20000)
     {
-      Serial.println("\nWiFi connect timeout, resetting...");
+      DEBUG_CALL(Serial.println("\nWiFi connect timeout, resetting..."));
       ESP.restart();
     }
   }
-  Serial.print(" OK  IP=");
-  Serial.println(WiFi.localIP());
+  DEBUG_CALL(Serial.print(" OK  IP="));
+  DEBUG_CALL(Serial.println(WiFi.localIP()));
 }
 
 void EyeNetworkInterface::connect_zenoh()
@@ -114,26 +114,26 @@ void EyeNetworkInterface::connect_zenoh()
     zp_config_insert(z_config_loan_mut(&conf), Z_CONFIG_CONNECT_KEY, Z_LOCATOR);
   }
 
-  Serial.print("Opening Zenoh session ... ");
+  DEBUG_CALL(Serial.print("Opening Zenoh session ... "));
   if (z_open(&g_session, z_config_move(&conf), NULL) < 0)
   {
-    Serial.println("FAILED (z_open). Halting.");
+    DEBUG_CALL(Serial.println("FAILED (z_open). Halting."));
     while (1)
       delay(1000);
   }
-  Serial.println("OK");
+  DEBUG_CALL(Serial.println("OK"));
 
   if (zp_start_read_task(z_session_loan_mut(&g_session), NULL) < 0 ||
       zp_start_lease_task(z_session_loan_mut(&g_session), NULL) < 0)
   {
-    Serial.println("FAILED to start read/lease tasks. Halting.");
+    DEBUG_CALL(Serial.println("FAILED to start read/lease tasks. Halting."));
     z_session_drop(z_session_move(&g_session));
     while (1)
       delay(1000);
   }
 
   // Subscriber (callback is lightweight)
-  Serial.print("Subscribing to " KEYEXPR " ... ");
+  DEBUG_CALL(Serial.print("Subscribing to " KEYEXPR " ... "));
   z_owned_closure_sample_t cb;
   z_closure_sample(&cb, data_handler, NULL, NULL);
 
@@ -144,11 +144,11 @@ void EyeNetworkInterface::connect_zenoh()
                            z_view_keyexpr_loan(&ke),
                            z_closure_sample_move(&cb), NULL) < 0)
   {
-    Serial.println("FAILED (z_declare_subscriber). Halting.");
+    DEBUG_CALL(Serial.println("FAILED (z_declare_subscriber). Halting."));
     while (1)
       delay(1000);
   }
-  Serial.println("OK");
+  DEBUG_CALL(Serial.println("OK"));
 }
 
 // TODO add mechanism to ensure this can only be called once
@@ -159,5 +159,5 @@ void EyeNetworkInterface::add_control_task(TaskFunction_t task)
   
   // Wait for an eye command to be received to schedule control task
   xTaskCreatePinnedToCore(task, "eye_ctrl", 4096, nullptr, 1, nullptr, 1);
-  Serial.println("Started control task");
+  DEBUG_CALL(Serial.println("Started control task"));
 }

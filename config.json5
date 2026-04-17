@@ -2,13 +2,9 @@
   mode: "router",
   listen: { 
     endpoints: [
-	  "tcp/0.0.0.0:7447"
+	  "tcp/0.0.0.0:7447",
+	  "serial//dev/tty.usbserial-110?baudrate=115200"
 	] 
-  },
-  connect: {
-	endpoints: [
-	  "serial//dev/tty.usbserial-10?baudrate=115200"
-	]
   },
   scouting: {
     multicast: {

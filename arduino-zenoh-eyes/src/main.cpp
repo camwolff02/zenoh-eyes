@@ -2,6 +2,7 @@
 #include <Wire.h>
 #include "controller.hpp"
 #include "network.hpp"
+#include "helper.h"
 
 EyeController eye_controller;
 
@@ -10,13 +11,15 @@ void setup()
 {
     pinMode(LED_BUILTIN, OUTPUT);
     digitalWrite(LED_BUILTIN, LOW);
-    Serial.begin(115200);
+    DEBUG_CALL(Serial.begin(115200));
     eye_controller.begin();
 
     delay(5000);
     // Networking
     EyeNetworkInterface::create_semaphores();
-    EyeNetworkInterface::connect_wifi();
+    if (!SERIAL) {
+        EyeNetworkInterface::connect_wifi();
+    }
     EyeNetworkInterface::connect_zenoh();
     EyeNetworkInterface::add_control_task(control_task);
 }

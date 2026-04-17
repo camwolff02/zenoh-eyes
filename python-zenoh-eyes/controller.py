@@ -4,8 +4,6 @@
 import argparse
 import json
 
-# import msvcrt
-import os
 import time
 from math import cos, pi, sqrt
 from typing import List, Optional
@@ -36,11 +34,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--sep-min", type=int, default=0)
     parser.add_argument("--sep-max", type=int, default=90)
     # Step increment defaults & bounds
-    parser.add_argument("--step-lr", type=int, default=2)
-    parser.add_argument("--step-ud", type=int, default=2)
-    parser.add_argument("--step-sep", type=int, default=2)
+    parser.add_argument("--step-default", type=int, default=2)
     parser.add_argument("--step-min", type=int, default=1, help="Minimum step size")
-    parser.add_argument("--step-max", type=int, default=10, help="Maximum step size")
+    parser.add_argument("--step-max", type=int, default=15, help="Maximum step size")
     # Initial values
     parser.add_argument("--lr0", type=int, default=0)
     parser.add_argument("--ud0", type=int, default=0)
@@ -117,10 +113,6 @@ class KeyReader:
     """
 
     def __init__(self) -> None:
-        self.win = os.name == "nt"
-        self._blessed_term = None
-        self._blessed_cbreak_ctx = None
-
         self._blessed_term = Terminal()
         # enter cbreak (raw-ish) mode so inkey() is instantaneous
         self._blessed_cbreak_ctx = self._blessed_term.cbreak()
@@ -201,6 +193,7 @@ class KeyReader:
                 act = self._map_action_from_char(str(key))
             if act:
                 actions.append(act)
+
         return actions
 
 
@@ -377,14 +370,14 @@ def render_eye(
 def controls_panel() -> Panel:
     """Controls panel."""
     table = Table.grid(padding=(0, 1))
-    table.add_row("[bold]Controls[/bold]")
-    table.add_row("←/h: LR-", "→/l: LR+")
-    table.add_row("↑/k: UD+", "↓/j: UD−")
-    table.add_row("w: SEP +", "s: SEP −")
-    table.add_row("+ / = : increase step size")
-    table.add_row("- / _ : decrease step size")
-    table.add_row("b: Blink (one-shot)", "r: Reset")
-    table.add_row("[dim]q: Quit[/dim]")
+    table.add_row(r"[bold]Controls: \[Keybind/Options] Action [/bold]")
+    table.add_row(r"\[←/h] Look Left", r"\[→/l] Look Right")
+    table.add_row(r"\[↑/k]: Look Up", r"\[↓/j] Look Down")
+    table.add_row(r"\[w] Open Eye", r"\[s] Close Eye")
+    table.add_row(r"\[+/=] Increase eye speed")
+    table.add_row(r"\[-/_] Decrease eye speed")
+    table.add_row(r"\[b] Blink", r"\[r] Reset")
+    table.add_row(r"[dim]\[q] Quit[/dim]")
     return Panel(table, title="Controls", border_style="magenta")
 
 
@@ -397,7 +390,7 @@ def state_panel(
     keyexpr: str,
     endpoints: Optional[List[str]],
     blinking: bool,
-    steps: Optional[dict] = None,
+    steps: Optional[int] = None,
 ) -> Panel:
     """State panel showing bars, blink flag, rates, endpoints and step sizes."""
 
@@ -411,16 +404,16 @@ def state_panel(
 
     eps = ", ".join(endpoints) if endpoints else "(discovery)"
     table = Table.grid(padding=(0, 1))
-    table.add_row(f"LR  {progress_bar(lr, limits['lr'][0],  limits['lr'][1])}")
-    table.add_row(f"UD  {progress_bar(ud, limits['ud'][0],  limits['ud'][1])}")
-    table.add_row(f"SEP {progress_bar(sep, limits['sep'][0], limits['sep'][1])}")
+    table.add_row(f"Left Right        {progress_bar(lr, limits['lr'][0],  limits['lr'][1])}")
+    table.add_row(f"Up Down           {progress_bar(ud, limits['ud'][0],  limits['ud'][1])}")
+    table.add_row(f"Eyelid Separation {progress_bar(sep, limits['sep'][0], limits['sep'][1])}")
     table.add_row(f"[dim]Blink:[/dim] {'[bold green]YES[/bold green]' if blinking else '[dim]no[/dim]'}")
     if steps:
-        table.add_row(f"[yellow]Step size:[/yellow] LR={steps['lr']}  UD={steps['ud']}  SEP={steps['sep']}")
-    table.add_row(f"[dim]Rate:[/dim] {rate_hz:.1f} Hz")
-    table.add_row(f"[dim]Keyexpr:[/dim] {keyexpr}")
+        table.add_row(f"[yellow]Eye Speed:[/yellow] {steps} degree{'s' if steps > 1 else ''} per key press")
+    table.add_row(f"[dim]Control Frequency:[/dim] {rate_hz:.1f} Hz")
+    table.add_row(f"[dim]Sending To:[/dim] {keyexpr}")
     table.add_row(f"[dim]Endpoints:[/dim] {eps}")
-    return Panel(table, title="State", border_style="cyan")
+    return Panel(table, title="Current Eye Position", border_style="cyan")
 
 
 # ------------------ Zenoh wrapper -------------
@@ -435,11 +428,11 @@ class ZPub:
 
     def open(self) -> None:
         """Open zenoh session and declare publisher."""
-        conf = zenoh.Config()  # type: ignore[attr-defined]  # pylint: disable=no-member
+        conf = zenoh.Config()  
         if self.endpoints:
-            conf.insert_json5("connect/endpoints", json.dumps(self.endpoints))  # type: ignore[attr-defined]
-        self.session = zenoh.open(conf)  # type: ignore[attr-defined]  # pylint: disable=no-member
-        self.pub = self.session.declare_publisher(self.keyexpr)  # type: ignore[attr-defined]
+            conf.insert_json5("connect/endpoints", json.dumps(self.endpoints))  
+        self.session = zenoh.open(conf)  
+        self.pub = self.session.declare_publisher(self.keyexpr)  
 
     def close(self) -> None:
         """Close publisher and session."""
@@ -469,11 +462,7 @@ def main() -> None:
     sep = clamp(args.sep0, args.sep_min, args.sep_max)
 
     # Step increments and limits
-    steps = {
-        "lr": clamp(args.step_lr, args.step_min, args.step_max),
-        "ud": clamp(args.step_ud, args.step_min, args.step_max),
-        "sep": clamp(args.step_sep, args.step_min, args.step_max),
-    }
+    steps = clamp(args.step_default, args.step_min, args.step_max)
 
     # Blink animation state (UI only)
     blink_ms = max(80, int(args.blink_ms))
@@ -515,32 +504,28 @@ def main() -> None:
                         lr, ud, sep = 0, 0, limits["sep"][1]
                         continue
                     if key == "LEFT":
-                        lr = clamp(lr - steps["lr"], *limits["lr"])
+                        lr = clamp(lr - steps, *limits["lr"])
                         continue
                     if key == "RIGHT":
-                        lr = clamp(lr + steps["lr"], *limits["lr"])
+                        lr = clamp(lr + steps, *limits["lr"])
                         continue
                     if key == "UP":
-                        ud = clamp(ud + steps["ud"], *limits["ud"])
+                        ud = clamp(ud + steps, *limits["ud"])
                         continue
                     if key == "DOWN":
-                        ud = clamp(ud - steps["ud"], *limits["ud"])
+                        ud = clamp(ud - steps, *limits["ud"])
                         continue
                     if key == "SEP_UP":
-                        sep = clamp(sep + steps["sep"], *limits["sep"])
+                        sep = clamp(sep+ steps, *limits["sep"])
                         continue
                     if key == "SEP_DOWN":
-                        sep = clamp(sep - steps["sep"], *limits["sep"])
+                        sep = clamp(sep - steps, *limits["sep"])
                         continue
                     if key == "STEP_INC":
-                        steps["lr"] = clamp(steps["lr"] + 1, args.step_min, args.step_max)
-                        steps["ud"] = clamp(steps["ud"] + 1, args.step_min, args.step_max)
-                        steps["sep"] = clamp(steps["sep"] + 1, args.step_min, args.step_max)
+                        steps = clamp(steps + 1, args.step_min, args.step_max)
                         continue
                     if key == "STEP_DEC":
-                        steps["lr"] = clamp(steps["lr"] - 1, args.step_min, args.step_max)
-                        steps["ud"] = clamp(steps["ud"] - 1, args.step_min, args.step_max)
-                        steps["sep"] = clamp(steps["sep"] - 1, args.step_min, args.step_max)
+                        steps = clamp(steps - 1, args.step_min, args.step_max)
                         continue
 
                 # --- Periodic publish
